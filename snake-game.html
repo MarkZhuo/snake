@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <title>贪吃蛇小游戏</title>
+    <style>
+        button {
+            width: 100px;
+            height: 40px;
+            font-weight: bold;
+        }
+
+        #game_title {
+            margin-left: 95px;
+        }
+
+        #canvas {
+            border: 1px solid #000000; /* 设置边框线 */
+        }
+
+        #score {
+            font-weight: bold;
+        }
+
+        #mode_form {
+            font-weight: bold;
+        }
+
+        #game_over {
+            display: none; /* 设置game over 窗口不可见 */
+            position: fixed;
+            top: 190px;
+            left: 65px;
+            width: 280px;
+            height: 160px;
+            background-color: aliceblue;
+            border-radius: 5px;
+            border: 1px solid #000; /* 设置边框线 */
+        }
+
+        #once_again {
+            position: relative;
+            left: 20px;
+        }
+
+        #cancel {
+            position: relative;
+            left: 50px;
+        }
+    </style>
+</head>
+<body>
+<h1 id="game_title">贪吃蛇小游戏</h1>
+<canvas id="canvas" width="400" height="400"></canvas>
+<div id="game_over">
+    <h3 id="game_over_text" align="center">游戏结束！</h3>
+    <h3 id="game_over_score" align="center">您的最终得分为: 0分</h3>
+    <button id="once_again">再来一把</button>
+    <button id="cancel">取消</button>
+</div>
+<br>
+<div id="game_info">
+    <p><b>游戏说明:</b></p>
+    <p>
+        <b>1</b>. 用键盘上下左右键（或者IJKL键，或者WSAD键）控制蛇的方向，寻找吃的东西
+        <br><b>2</b>. 每吃一口就能得到一定的积分，同时蛇的身子会越吃越长
+        <br><b>3</b>. 不能碰墙，不能咬到自己的身体，更不能咬自己的尾巴
+        <br><b>4</b>. 在下方单选框中选择难度等级，点击"<b>开始 / 继续</b>"即开始游戏，点击"<b>暂停</b>"则暂停游戏，
+        <br>&nbsp;&nbsp;&nbsp;&nbsp;再点击"<b>开始 / 继续</b>"继续游戏，点击"重新开始"则重新开始游戏
+        <br><b>5</b>. <b>快捷键</b>: "<b>C</b>"表示开始或继续，"<b>P</b>"表示暂停，"<b>R</b>"表示重新开始
+    </p>
+</div>
+
+<p id="score">目前得分: 0分</p>
+<form action="" id="mode_form">
+    难度等级:
+    <input type="radio" name="mode" id="simply" value="simply" checked/>
+    <label for="simply">简单</label>
+    <input type="radio" name="mode" id="middle" value="middle"/>
+    <label for="middle">中级</label>
+    <input type="radio" name="mode" id="hard" value="hard"/>
+    <label for="hard">困难</label>
+</form>
+<br/>
+<button id="startButton">开始 / 继续</button>
+<button id="pauseButton">暂停</button>
+<button id="restartButton">重新开始</button>
+
+<script>
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+
+    const start_btn = document.getElementById("startButton");
+    const pause_btn = document.getElementById("pauseButton");
+    const restart_btn = document.getElementById("restartButton");
+    const once_again_btn = document.getElementById("once_again");
+    const cancel_btn = document.getElementById("cancel");
+    const game_over_div = document.getElementById("game_over");
+    const game_over_score = document.getElementById("game_over_score");
+
+    const score_cal = document.getElementById("score");
+    const mode_item = document.getElementsByName("mode");
+
+    // 用刷新间隔代表蛇的速度，刷新间隔越长，则蛇的速度越慢
+    const simply_mode = 200;
+    const middle_mode = 100;
+    const hard_mode = 50;
+
+    //注意要改为var const是不会修改的
+    let snake = [41, 40]; // 蛇身体队列
+    let direction = 1; // 方向：1为向右，-1为向左，20为向下，-20为向上
+    let food = 42; // 食物位置，取值为0~399
+    let n; // 蛇的下一步的方向（由键盘和蛇的原方向决定）
+    let score = -1; // 得分
+    let time_internal = simply_mode; // 刷新时间间隔，用于调整蛇的速度,默认为简单模式
+
+    let enabled = true; // 用于控制是否刷新，实现通过一定频率刷新
+    let run_id; // 请求ID，用于暂停功能
+
+    // 产生min~max的随机整数，用于随机产生食物的位置
+    function random(min, max) {
+        return Math.floor(Math.random() * (max - min)) + min;
+    }
+
+    // 用于绘制蛇或者是食物代表的方块，seat为方块位置，取值为0~399，color为颜色
+    function draw(seat, color) {
+        ctx.fillStyle = color; // 填充颜色
+        // fillRect的四个参数分别表示要绘制方块的x坐标，y坐标，长，宽，这里为了美观留了1px用于边框
+        ctx.fillRect(
+            (seat % 20) * 20 + 1,
+            Math.floor(seat / 20) * 20 + 1,
+            18,
+            18
+        );
+    }
+
+    // 同步难度等级
+    function syncMode() {
+        let mode_value = "";
+        for (let i = 0; i < mode_item.length; i++) {
+            if (mode_item[i].checked) {
+                mode_value = mode_item[i].value;//原来是mode_item.value
+            }
+        }
+        switch (mode_value) {
+            case "simply":
+                time_internal = simply_mode;
+                break;
+            case "middle":
+                time_internal = middle_mode;
+                break;
+            case "hard":
+                time_internal = hard_mode;
+                break;
+        }
+    }
+
+    // 用于绑定键盘上下左右事件，我设置了wsad，或者ijkl，或者上下左右方向键，代表上下左右方向
+    // 同时绑定R 重启，P 暂停，C 继续，注意：若是这几个键则不需要更新direction的值，操作结束后直接返回即可
+    document.onkeydown = function (event) {
+        const keycode = event.keyCode;
+        if (keycode === 82) {
+            // R 重启
+            restart_btn.onclick();
+            return;
+        } else if (keycode === 80) {
+            // P 暂停
+            pause_btn.onclick();
+            return;
+        } else if (keycode === 67) {
+            // C 继续
+            start_btn.onclick();
+            return;
+        } else if (keycode <= 40) {
+            // 上 38 下 40 左 37 右 39
+            n = [-1, -20, 1, 20][keycode - 37] || direction; // 若keycode为其他值，则方向不变
+        } else if (keycode <= 76 && keycode >= 73) {
+            // i 73 j 74 k 75 l 76
+            n = [-20, -1, 20, 1][keycode - 73] || direction;
+        } else {
+            switch (keycode) {
+                case 87: //w
+                    n = -20;
+                    break;
+                case 83: //s
+                    n = 20;
+                    break;
+                case 65: //a
+                    n = -1;
+                    break;
+                case 68: //d
+                    n = 1;
+                    break;
+                default:
+                    n = direction;
+            }
+        }
+        direction = snake[1] - snake[0] === n ? direction : n; // 若方向与原方向相反，则方向不变
+    };
+
+    // 用于初始化游戏各项参数
+    function init_game() {
+        snake = [41, 40];
+        direction = 1;
+        food = 42;
+        score = -1;
+        time_internal = simply_mode;
+        enabled = true;
+        score_cal.innerText = "目前得分: 0分"; // 更新得分
+        mode_item[0].checked = true; // 重置难度等级为简单
+    }
+
+    function game_over() {
+        cancelAnimationFrame(run_id);
+        game_over_score.innerText = "您的最终得分为: " + score + "分";
+        game_over_div.style.display = "block";
+    }
+
+    // 启动或继续游戏
+    function run_game() {
+        syncMode(); // 同步难度等级
+        n = snake[0] + direction; // 找到新蛇头坐标
+        snake.unshift(n); // 添加新蛇头
+        // 判断蛇头是否撞到自己或者是否超出边界
+        if (
+            snake.indexOf(n, 1) > 0 ||
+            n < 0 ||
+            n > 399 ||
+            (direction === 1 && n % 20 === 0) ||
+            (direction === -1 && n % 20 === 19)
+        ) {
+            game_over();
+        }
+        draw(n, "#1a8dcc"); // 绘制新蛇头为浅蓝色
+        draw(snake[1], "#cececc"); // 将原来的蛇头（浅蓝色）变成蛇身（浅灰色）
+        if (n === food) {
+            score = score + 1;
+            score_cal.innerText = "目前得分: " + score; // 更新得分
+            while (snake.indexOf((food = random(0, 400))) >= 0) ; // 重新刷新食物，注意食物应不在蛇内部
+            draw(food, "Yellow"); // 绘制食物
+        } else {
+            draw(snake.pop(), "White"); // 将原来的蛇尾绘制成白色
+        }
+        // setTimeout(arguments.callee, time_internal); //之前的方案，无法实现暂停和游戏的继续
+    }
+
+    // 控制游戏的刷新频率,每隔time_internal时间间隔刷新一次
+    function game_control() {
+        if (enabled) {
+            enabled = false;
+            requestAnimationFrame(run_game);
+            setTimeout(() => enabled = true, time_internal);
+        }
+        run_id = requestAnimationFrame(game_control);
+    }
+
+    // 绑定开始按钮点击事件
+    start_btn["onclick"] = function () {
+        run_id = requestAnimationFrame(game_control);
+    };
+
+    // 绑定暂停按钮点击事件
+    pause_btn.onclick = function () {
+        cancelAnimationFrame(run_id);
+    };
+
+    // 绑定重新开始按钮点击事件
+    restart_btn.onclick = function () {
+        cancelAnimationFrame(run_id);
+        // 将原有的食物和蛇的方块都绘制成白色
+        for (let i = 0; i < snake.length; i++) {
+            draw(snake[i], "White");
+        }
+        draw(food, "White");
+        // 初始化游戏各项参数
+        init_game();
+        run_id = requestAnimationFrame(game_control);
+    };
+
+    // 绑定游戏结束时的取消按钮点击事件
+    cancel_btn.onclick = function () {
+        for (let i = 0; i < snake.length; i++) {
+            draw(snake[i], "White");
+        }
+        draw(food, "White");
+        init_game();
+        game_over_div.style.display = "none";
+    }
+
+    // 绑定游戏结束时的再来一把按钮点击事件
+    once_again_btn.onclick = function () {
+        for (let i = 0; i < snake.length; i++) {
+            draw(snake[i], "White");
+        }
+        draw(food, "White");
+        init_game();
+        game_over_div.style.display = "none";
+        run_id = requestAnimationFrame(game_control);
+    }
+</script>
+</body>
+</html>
